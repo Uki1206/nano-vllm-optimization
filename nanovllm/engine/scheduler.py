@@ -22,6 +22,9 @@ class Scheduler:
         self.waiting.append(seq)
 
     def schedule(self) -> tuple[list[Sequence], bool]:
+        """
+        完成一次调度，准备好scheduled_seqs 和 is_prefill, 默认Prefill优先
+        """
         scheduled_seqs = []      # 本次step调度的seqs
         num_batched_tokens = 0   # 本次step调度seqs的总token数
 
@@ -82,6 +85,34 @@ class Scheduler:
             assert scheduled_seqs
             self.running.extendleft(reversed(scheduled_seqs))
             return scheduled_seqs, False
+
+    def preempt(self,seq: Sequence):
+        """
+        Decode阶段不够分配时的抢占规则,传入的是被抢占的seq
+        被抢占的seq: 重新进入waiting队列，等待重新prifill，释放其所有物理block
+        """
+        seq.status = SequenceStatus.WAITING
+        seq.is_prefill = True
+        self.block_manager.deallocate(seq)
+        self.waiting.appendleft(seq)   # 补偿：被抢占的seq到waiting的队头，方便下次立即prefill
+
+    def postprocess(self, seqs: list[Sequence], token_ids: list[int], is_prefill: bool):
+        for seq, token_id in zip(seqs, token_ids):
+            self.block_manager.hash_blocks(seq)       # 更新hash_to_block_id
+            seq.num_cached_tokens += seq.num_scheduled_tokens
+            seq.num_scheduled_tokens = 0
+
+            # 如果当前seq是prefill阶段还没处理完，下一轮还要继续处理：先跳过当前seq
+            if is_prefill and seq.num_cached_tokens < seq.num_tokens:
+                continue
+            # 如果当前seq是Decode阶段，加入一个新token
+            seq.append_token(token_id)
+                # decode结束：生成eos或达到允许的最大长度
+            if (not seq.ignore_eos and token_id == self.eos) or seq.num_completion_tokens == seq.max_tokens:
+                seq.status = SequenceStatus.FINISHED
+                self.block_manager.deallocate(seq)
+                self.running.remove(seq)
+
 
 
 
