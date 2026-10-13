@@ -70,7 +70,7 @@ class LLMEngine:
         # prefill：本轮要处理的token数 = scheduled_token数之和
         # decode: 本轮要处理的token数 = 请求的数量,用负数区分prefill和decode
 
-        #所有进程执行一次推理
+        # 所有进程执行一次推理
         token_ids = self.model_runner.call("run", seqs, is_prefill) 
 
         # 更新请求状态，判断是否结束
