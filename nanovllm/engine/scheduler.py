@@ -34,7 +34,7 @@ class Scheduler:
             remaining = self.max_num_batched_tokens - num_batched_tokens # 剩余token budget
             if remaining == 0:
                 break
-            if not seq.block_table:  # 如果还没有分配kv cache
+            if not seq.block_table:  
                 # num_cached_blocks：当前这个请求有多少个完整 block 的前缀已经命中 Prefix Cache，可以直接复用，不需要重新计算。
                 num_cached_blocks = self.block_manager.can_allocate(seq)  
                 if num_cached_blocks == -1: # 如果不能分配就退出 
@@ -50,6 +50,8 @@ class Scheduler:
             # 只有本轮第一个 prefill 请求允许被切成 chunk；如果前面已经调度了别的请求，当前请求放不下就直接留到下一轮。
 
             if not seq.block_table: # 这里才要真正分配
+                # 首次 Prefill：为整个 Prompt 预分配所有需要的 Block
+                # 后续 Chunked Prefill 直接复用，不需要再次分配，因此这里只有首次才分配
                 self.block_manager.allocate(seq, num_cached_blocks)
 
             seq.num_scheduled_tokens = min(num_tokens, remaining) # 本轮真正要计算的token数
@@ -82,9 +84,9 @@ class Scheduler:
                 self.block_manager.may_append(seq)
                 scheduled_seqs.append(seq)
             
-            assert scheduled_seqs
-            self.running.extendleft(reversed(scheduled_seqs))
-            return scheduled_seqs, False
+        assert scheduled_seqs
+        self.running.extendleft(reversed(scheduled_seqs))
+        return scheduled_seqs, False
 
     def preempt(self,seq: Sequence):
         """

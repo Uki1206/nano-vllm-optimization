@@ -115,7 +115,8 @@ class BlockManager:
                 self.used_block_ids.append(block_id)
             seq.block_table.append(block_id)
 
-        for i in range(num_cached_blocks, seq.num_blocks):  # 给除了前缀以外的块分配空间并加入block_table
+        # 给除了前缀以外的块分配空间并加入block_table, 注意这里已经给一个seq提前预留了所有prefill的block
+        for i in range(num_cached_blocks, seq.num_blocks):  
             seq.block_table.append(self._allocate_block())
 
         # 更新已有kv cache的token数，这里指有前缀的部分可以不用算
