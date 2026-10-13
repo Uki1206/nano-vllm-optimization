@@ -19,7 +19,7 @@ class LLMEngine:
         初始化整个推理引擎
         """
         config_fields = {field.name for field in fields(Config)}  # 筛选Config支持的参数
-        config_kwargs = {K: v for k, v in kwargs.items() if k in config_fields}  # 过滤kwargs
+        config_kwargs = {k: v for k, v in kwargs.items() if k in config_fields}  # 过滤kwargs
         config = Config(model, **config_kwargs)  #真正创建配置
         Sequence.block_size = config.kvcache_block_size # Sequence类变量，所有Seqence公用的block_size
         
