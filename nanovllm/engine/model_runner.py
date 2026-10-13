@@ -325,16 +325,18 @@ class ModelRunner:
         hf_config = config.hf_config
         max_bs = min(self.config.max_num_seqs, 512)
         max_num_blocks = (config.max_model_len + self.block_size - 1) // self.block_size
-        input_ids = torch.zeros(max_bs, dtype=torch.int64)
-        positions = torch.zeros(max_bs, dtype=torch.int64)
-        slot_mapping = torch.zeros(max_bs, dtype=torch.int32)
-        context_lens = torch.zeros(max_bs, dtype=torch.int32)
-        block_tables = torch.zeros(max_bs, max_num_blocks, dtype=torch.int32)
-        outputs = torch.zeros(max_bs, hf_config.hidden_size)
+        input_ids = torch.zeros(max_bs, dtype=torch.int64)                      #每个请求当前需要处理的 Token ID
+        positions = torch.zeros(max_bs, dtype=torch.int64)                      #每个 Token 的位置
+        slot_mapping = torch.zeros(max_bs, dtype=torch.int32)                   #当前 Token 的 KV 写入位置
+        context_lens = torch.zeros(max_bs, dtype=torch.int32)                   #每个请求的上下文长度
+        block_tables = torch.zeros(max_bs, max_num_blocks, dtype=torch.int32)   #每个请求的逻辑 Block 到物理 Block 的映射
+        outputs = torch.zeros(max_bs, hf_config.hidden_size)                    #保存模型输出的 Hidden States
         self.graph_bs = [1, 2, 4, 8] + list(range(16,max_bs + 1, 16))
-        self.graphs = {}
+        self.graphs = {}            #用来保存不同 Batch Size 对应的 CUDA Graph
         self.graph_pool = None
 
+
+        # 遍历并录制 CUDA Graph,从最大的batchsize开始录制:逐个 Batch Size 进行 Warmup + Capture
         for bs in reversed(self.graph_bs):
             graph = torch.cuda.CUDAGraph()
             set_context(False, slot_mapping=slot_mapping[:bs], context_lens=context_lens[:bs], block_tables=block_tables[:bs])
@@ -347,6 +349,7 @@ class ModelRunner:
             torch.cuda.synchronize()
             reset_context()
 
+        # 保留录制时的 Tensor —>每次 Decode 将新的输入数据复制到这些 Tensor 中->调用 graph.replay()->从固定的 outputs Tensor 中读取本次结果。
         self.graph_vars = dict(
             input_ids=input_ids,
             positions=positions,
