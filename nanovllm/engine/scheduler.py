@@ -97,8 +97,13 @@ class Scheduler:
         seq.is_prefill = True
         self.block_manager.deallocate(seq)
         self.waiting.appendleft(seq)   # 补偿：被抢占的seq到waiting的队头，方便下次立即prefill
+        
 
     def postprocess(self, seqs: list[Sequence], token_ids: list[int], is_prefill: bool):
+        """
+        每次step()后的后处理：更新 KV Cache 状态(更新hash,num_cached_tokens,num_scheduled_tokens)、
+        保存新生成的 Token、判断请求是否结束，并释放已完成请求的资源
+        """
         for seq, token_id in zip(seqs, token_ids):
             self.block_manager.hash_blocks(seq)       # 更新hash_to_block_id
             seq.num_cached_tokens += seq.num_scheduled_tokens
@@ -107,7 +112,7 @@ class Scheduler:
             # 如果当前seq是prefill阶段还没处理完，下一轮还要继续处理：先跳过当前seq
             if is_prefill and seq.num_cached_tokens < seq.num_tokens:
                 continue
-            # 如果当前seq是Decode阶段，加入一个新token
+            # 如果当前seq是Decode阶段，加入一个新token(注意：此处在prefill完成那一刻也会执行)
             seq.append_token(token_id)
                 # decode结束：生成eos或达到允许的最大长度
             if (not seq.ignore_eos and token_id == self.eos) or seq.num_completion_tokens == seq.max_tokens:
