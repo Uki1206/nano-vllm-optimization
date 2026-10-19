@@ -51,7 +51,7 @@ class VocabParallelEmbedding(nn.Module):
         """
         每张 GPU 只查询自己负责的 Token Embedding，不属于自己的 Token 用 0 填充，
         最后通过 all_reduce(SUM) 将各 GPU 的结果相加，得到完整的 Embedding 输出。
-        注：每张GPU都会收到相同的x输入
+        注：每张GPU都会收到相同的x(Token序列)，但只有自己负责的那部分的Embedding权重在当前的GPU上
         """
         # 1.判断当前 Token 是否属于本 GPU
         if self.tp_size > 1:
