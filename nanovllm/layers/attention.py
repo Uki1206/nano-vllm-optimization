@@ -85,21 +85,33 @@ class Attention(nn.Module):
         self.head_dim = head_dim
         self.scale = scale
         self.num_kv_heads = num_kv_heads
+        # 初始化空 KV Cache，实际 Cache 由外部创建并绑定
         self.k_cache = self.v_cache = torch.tensor([])
 
     def forward(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor):
+        # 1. 获取本轮推理上下文,包括 Prefill/Decode 状态、slot_mapping、block_tables 等
         context = get_context()
+
+        # 2. 获取当前 Attention 层的 KV Cache
         k_cache, v_cache = self.k_cache, self.v_cache
+
+        # 3. 如果 KV Cache 已初始化，则将本轮计算得到的 K、V 写入 Cache
         if k_cache.numel() and v_cache.numel():
             store_kvcache(k, v, k_cache, v_cache, context.slot_mapping)
+
+        # 4. Prefill 阶段
         if context.is_prefill:
+            # 如果存在 Block Table，说明需要利用已缓存的前缀 KV.此时改为从 KV Cache 中读取 K、V
             if context.block_tables is not None:    # prefix cache
                 k, v = k_cache, v_cache
             o = flash_attn_varlen_func(q, k, v,
                                        max_seqlen_q=context.max_seqlen_q, cu_seqlens_q=context.cu_seqlens_q,
                                        max_seqlen_k=context.max_seqlen_k, cu_seqlens_k=context.cu_seqlens_k,
                                        softmax_scale=self.scale, causal=True, block_table=context.block_tables)
-        else:    # decode
+        # 5. Decode 阶段
+        else:    
+            # 当前 Token 的 KV 已经在步骤 3 写入 Cache
+            # 因此只需提供 Q 和历史 KV Cache 即可计算 Attention
             o = flash_attn_with_kvcache(q.unsqueeze(1), k_cache, v_cache,
                                         cache_seqlens=context.context_lens, block_table=context.block_tables, 
                                         softmax_scale=self.scale, causal=True)

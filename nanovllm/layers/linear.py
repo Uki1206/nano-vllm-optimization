@@ -144,7 +144,9 @@ class MergedColumnParallelLinear(ColumnParallelLinear):
 
 
 class QKVParallelLinear(ColumnParallelLinear):
-
+    """
+    将输入 Hidden States 投影为 Q、K、V，使用列并行，不同 GPU 负责不同 Head。
+    """
     def __init__(
             self, 
             hidden_size: int,                       #模型隐藏层维度,d_model

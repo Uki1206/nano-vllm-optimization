@@ -51,3 +51,8 @@ class RotaryEmbedding(nn.Module):
     cos 和 sin 中间的维度 1 会自动广播匹配 num_heads 和 num_kv_heads，
     对每个注意力头独立施加相同的旋转位置编码，最后返回编码后的 query 和 key。
     """
+
+@lru_cache(1)
+def get_rope(head_size: int, rotary_dim: int, max_position: int, base: float,):
+    rotary_emb = RotaryEmbedding(head_size, rotary_dim, max_position, base)
+    return rotary_emb
