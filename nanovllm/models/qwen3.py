@@ -86,7 +86,7 @@ class Qwen3Attention(nn.Module):
             rope_theta = rope_scaling.get("rope_theta", rope_theta)
         self.rotary_emb = get_rope(
             self.head_dim,
-            rotary_dim = head_dim,
+            rotary_dim = self.head_dim,
             max_position=max_position,
             base=rope_theta
         )

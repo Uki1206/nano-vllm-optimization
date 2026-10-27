@@ -95,7 +95,7 @@ class ModelRunner:
         """
         assert self.world_size > 1 and self.rank == 0
         # 以下为rank0 写共享内存的过程，共享内存结构为 数据长度n（前4字节） + data（随后n字节）
-        data = pickle.dump([method_name, *args])
+        data = pickle.dumps([method_name, *args])
         n = len(data)
         self.shm.buf[0:4] = n.to_bytes(4, "little")
         self.shm.buf[4:n+4] = data  
@@ -139,13 +139,13 @@ class ModelRunner:
         free, total =  torch.cuda.mem_get_info()
         used = total - free   # 得到当前显存使用量
 
-        peak = torch.cuda.memory_stats()["allocate_bytes.all.peak"]
-        current = torch.cuda.memory_stats()["allocate_bytes.all.current"]
+        peak = torch.cuda.memory_stats()["allocated_bytes.all.peak"]
+        current = torch.cuda.memory_stats()["allocated_bytes.all.current"]
         # warmup_model后，peak - current 相当于模型运行时额外需要的最大显存
 
         # 计算每个block占的显存大小
         num_kv_heads = hf_config.num_key_value_heads // self.world_size
-        head_dim = getattr(hf_config, "head_dim", hf_config.hidden_size // hf_config.num_ayyention_heads)
+        head_dim = getattr(hf_config, "head_dim", hf_config.hidden_size // hf_config.num_attention_heads)
         per_token_bytes = 2 * hf_config.num_hidden_layers * num_kv_heads * head_dim * hf_config.dtype.itemsize
         block_bytes = per_token_bytes * self.block_size
 
@@ -186,8 +186,8 @@ class ModelRunner:
         """
         input_ids = []          # 本轮 Prefill 需要计算的所有 token ID（多个 Sequence 拼接成一维数组）
         positions = []          # 每个 token 在原始 Sequence 中的位置，用于 RoPE 位置编码
-        cu_seqlen_q = []        # 各 Sequence 的 Q 累计长度，用于区分不同 Sequence 的 Q（只包含本轮计算的 token）
-        cu_seqlen_k = []        # 各 Sequence 的 K 累计长度，用于区分不同 Sequence 的 K（包含历史缓存 + 本轮计算的 token）
+        cu_seqlen_q = [0]        # 各 Sequence 的 Q 累计长度，用于区分不同 Sequence 的 Q（只包含本轮计算的 token）
+        cu_seqlen_k = [0]        # 各 Sequence 的 K 累计长度，用于区分不同 Sequence 的 K（包含历史缓存 + 本轮计算的 token）
         max_seqlen_q = 0        # 本批次所有 Sequence 中最大的 Q 长度
         max_seqlen_k = 0        # 本批次所有 Sequence 中最大的 K 长度（包含历史 KV）
         slot_mapping = []       # 本轮各 token 对应的 KV Cache 物理 slot 索引，用于将新计算的 K/V 写入对应位置
@@ -282,14 +282,14 @@ class ModelRunner:
         """
         真正执行transformer，有普通pytorch和CUDA Graph两条执行路径
         """
-        # 1.普通pytorch执行，条件:prefill阶段 / enforce_eager参数为True / Decode 阶段的 Batch Size 超过 51
+        # 1.普通pytorch执行，条件:prefill阶段 / enforce_eager参数为True / Decode 阶段的 Batch Size 超过 512
         if is_prefill or self.enforce_eager or input_ids.size(0) > 512:
             return self.model.compute_logits(self.model(input_ids, positions))
         # 2.CUDA Graph执行，条件：Decode阶段 且 enforce_eager=False 且 Decode 阶段的 Batch Size <= 512
         else:
             bs = input_ids.size(0)
             context = get_context()
-            graph = self.graph[next(x for x in self.graph_bs if x >= bs)]
+            graph = self.graphs[next(x for x in self.graph_bs if x >= bs)]
             graph_vars = self.graph_vars
             graph_vars["input_ids"][:bs] = input_ids
             graph_vars["positions"][:bs] = positions

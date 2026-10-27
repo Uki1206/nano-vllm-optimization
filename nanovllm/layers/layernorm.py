@@ -17,7 +17,7 @@ class RMSNorm(nn.Module):
         orig_dtype = x.dtype    
         x = x.float()           # FP16 -> FP32，中间计算保持精度
         var = x.pow(2).mean(dim=-1, keepdim=True)  # 计算均方值
-        x.mul(torch.rsqrt(var + self.eps))  # x * (var + eps)的平方根倒数
+        x.mul_(torch.rsqrt(var + self.eps))  # x * (var + eps)的平方根倒数
         x = x.to(orig_dtype).mul_(self.weight)  # FP32 -> FP16,恢复原精度，并乘权重（可学习参数）
         return x
 

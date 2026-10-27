@@ -30,7 +30,7 @@ class Sequence:
         self.num_prompt_tokens = len(token_ids)         # 原始prompt长度，永不变
         self.num_tokens = len(self.token_ids)           # token_ids总长度
         self.temperature = sampling_params.temperature  # 温度
-        self.max_tokens = sampling_params.max_tokens    # 每个step的 token budget
+        self.max_tokens = sampling_params.max_tokens    # 单个请求允许生成的最大 Token 数；每轮调度预算由 max_num_batched_tokens 控制
         self.ignore_eos = sampling_params.ignore_eos    # 是否忽略eos继续生成
 
         # -- 调度最小单位 --
@@ -60,11 +60,11 @@ class Sequence:
         return self.token_ids[self.num_prompt_tokens:]
 
     @property
-    def num_blocks(self):               # 当前需要多少物理块
+    def num_blocks(self):               # 当前需要多少block块
         return (self.num_tokens + self.block_size - 1) // self.block_size
 
     @property
-    def last_block_num_tokens(self):    # 最后一个物理块内实际用了多少slot
+    def last_block_num_tokens(self):    # 最后一个block内实际用了多少slot
         return self.num_tokens - (self.num_blocks - 1) * self.block_size
 
     # 其他方法

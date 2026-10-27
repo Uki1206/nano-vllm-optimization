@@ -17,7 +17,7 @@ class Block:
         self.token_ids = token_ids
 
     def reset(self):
-        self.ref_count = 0
+        self.ref_count = 1  # _allocate_block() 已经把这个 Block 分配给了一个 Sequence，因此它至少有一个持有者
         self.hash = -1
         self.token_ids = []
 
@@ -49,9 +49,9 @@ class BlockManager:
         block_id = self.free_block_ids.popleft()
         block = self.blocks[block_id]
         # 注意即使是从free池中取出的block,也不一定完全是"空"的，它的hash和token_ids可能残留还未被删除
-        if(block.hash != -1 and self.hash_to_block_id[block.hash] == block_id):
+        if(block.hash != -1 and self.hash_to_block_id.get[block.hash] == block_id):
             del self.hash_to_block_id[block.hash]  # 先删除对应的hash-block_id映射
-        block.reset()  # 再清除block的hash,ref_count,token_ids
+        block.reset()  # 再清除block的hash,token_ids.并把引用数置1
         self.used_block_ids.add(block_id)
         return block_id
 
@@ -112,7 +112,7 @@ class BlockManager:
             else:
                 block.ref_count = 1
                 self.free_block_ids.remove(block_id)
-                self.used_block_ids.append(block_id)
+                self.used_block_ids.add(block_id)
             seq.block_table.append(block_id)
 
         # 给除了前缀以外的块分配空间并加入block_table, 注意这里已经给一个seq提前预留了所有prefill的block
@@ -126,13 +126,14 @@ class BlockManager:
         """
         seq生成完成 或 被抢占 时，释放其占用的物理block(如果ref == 0)
         """
-        for block_id in reversed(seq.block_table): # 这里是从后往前释放,让最有复用价值的前缀块沉到 free deque 队尾，最不易被覆写
+        for block_id in reversed(seq.block_table): # 倒序释放 + deque popleft 取 / append 入,从后往前释放,让最有复用价值的前缀块沉到 free deque 队尾，最不易被覆写
             block = self.blocks[block_id]
             block.ref_count -= 1
             if(block.ref_count == 0):
                 self._deallocate_block(block_id)
-            seq.num_cached_tokens = 0
-            seq.block_table.clear()
+
+        seq.num_cached_tokens = 0
+        seq.block_table.clear()
 
     def can_append(self, seq:Sequence) -> bool:
         """

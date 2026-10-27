@@ -109,7 +109,7 @@ class ParallelLMHead(VocabParallelEmbedding):
         if context.is_prefill:
             last_indices = context.cu_seqlens_q[1:] - 1  # 计算每个请求最后一个token的索引
             x = x[last_indices].contiguous()    # x[last_indices]取出x中last_indices对应的行(可以理解为每个请求的最后一个token对应的行)，.contiguous() 用于确保选取后的 Tensor 具有连续的内存布局，方便后续矩阵运算
-                                                # 这样prefill阶段的x就变成了[batch_size,vocab_size]
+                                                # 这样prefill阶段的x就变成了[batch_size,hidden_size]
         
         # 3.计算局部logits，logits = X*WT
         logits = F.linear(x, self.weight)

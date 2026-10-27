@@ -46,7 +46,7 @@ def store_kvcache_kernel(
     key_offsets = idx * key_stride + tl.arange(0, D)    # 定位到当前第 idx 个 Token 在输入张量 key 中的连续内存地址（长度为 D）
     value_offsets = idx * value_stride + tl.arange(0, D)
     key = tl.load(key_ptr + key_offsets)
-    value = tl.load(value_ptr + value_offsets)      # 将该 Token 的 key 和 value 向量从全局显存加载到 GPU 寄存器（SRAM）中
+    value = tl.load(value_ptr + value_offsets)      # 将该 Token 的 key 和 value 向量从全局显存加载到 GPU 寄存器中
     
     cache_offsets = slot * D + tl.arange(0 ,D)      # 根据查到的物理槽位 slot，计算出在 k_cache 和 v_cache 中的目标内存地址
     tl.store(k_cache_ptr + cache_offsets, key)

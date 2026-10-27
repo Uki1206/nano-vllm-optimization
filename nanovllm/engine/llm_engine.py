@@ -33,11 +33,12 @@ class LLMEngine:
             process = ctx.Process(target=ModelRunner, args=(config, i, event))
             process.start()
             self.ps.append(process)
+            self.events.append(event)
 
         self.model_runner = ModelRunner(config, 0, self.events) # 创建rank0 ModelRunner
         self.tokenizer = AutoTokenizer.from_pretrained(config.model, use_fast=True)
         config.eos = self.tokenizer.eos_token_id
-        self.shceduler = Scheduler(config)
+        self.scheduler = Scheduler(config)
 
         atexit.register(self.exit) #注册退出逻辑：python程序关闭时自动调用self.exit()
 
@@ -58,14 +59,14 @@ class LLMEngine:
         if isinstance(prompt, str):
             prompt = self.tokenizer.encode(prompt)  #文本转token
         seq = Sequence(prompt, sampling_params)
-        self.shceduler.add(seq)
+        self.scheduler.add(seq)
 
 
     def step(self):
         """
         ！核心！ 一次推理迭代
         """
-        seqs, is_prefill = self.shceduler.schedule()
+        seqs, is_prefill = self.scheduler.schedule()
         num_tokens = sum(seq.num_scheduled_tokens for seq in seqs) if is_prefill else -len(seqs)
         # prefill：本轮要处理的token数 = scheduled_token数之和
         # decode: 本轮要处理的token数 = 请求的数量,用负数区分prefill和decode
@@ -82,7 +83,7 @@ class LLMEngine:
 
 
     def is_finished(self):
-        return self.shceduler.is_finished()
+        return self.scheduler.is_finished()
 
 
     def generate(
