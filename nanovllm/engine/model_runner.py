@@ -331,7 +331,11 @@ class ModelRunner:
         context_lens = torch.zeros(max_bs, dtype=torch.int32)                   #每个请求的上下文长度
         block_tables = torch.zeros(max_bs, max_num_blocks, dtype=torch.int32)   #每个请求的逻辑 Block 到物理 Block 的映射
         outputs = torch.zeros(max_bs, hf_config.hidden_size)                    #保存模型输出的 Hidden States
-        self.graph_bs = [1, 2, 4, 8] + list(range(16,max_bs + 1, 16))
+        self.graph_bs = sorted(
+            {bs for bs in [1, 2, 4, 8] if bs <= max_bs}
+            | set(range(16, max_bs + 1, 16))
+            | {max_bs}
+        )
         self.graphs = {}            #用来保存不同 Batch Size 对应的 CUDA Graph
         self.graph_pool = None
 

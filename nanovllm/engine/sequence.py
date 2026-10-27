@@ -74,7 +74,7 @@ class Sequence:
     def __getitem__(self, key):
         return self.token_ids[key]
 
-    def block(self, i):                # 取第 i 个物理块对应的 token 列表（用于 hashing）
+    def block(self, i):                # 取第 i 个逻辑块对应的 token 列表（用于 hashing）
         assert 0 <= i < self.num_blocks
         return self.token_ids[i * self.block_size : (i+1) * self.block_size]
 

@@ -91,7 +91,7 @@ class LLMEngine:
             prompts: list[str] | list[list[int]],
             sampling_params: SamplingParams | list[SamplingParams],
             use_tqdm: bool = True
-    ) -> list[str]:
+    ) -> list[dict]:
         """
         完整生成流程（包含多次step）
         """
