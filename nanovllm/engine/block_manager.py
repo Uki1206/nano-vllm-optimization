@@ -49,7 +49,7 @@ class BlockManager:
         block_id = self.free_block_ids.popleft()
         block = self.blocks[block_id]
         # 注意即使是从free池中取出的block,也不一定完全是"空"的，它的hash和token_ids可能残留还未被删除
-        if(block.hash != -1 and self.hash_to_block_id.get[block.hash] == block_id):
+        if(block.hash != -1 and self.hash_to_block_id.get(block.hash) == block_id):
             del self.hash_to_block_id[block.hash]  # 先删除对应的hash-block_id映射
         block.reset()  # 再清除block的hash,token_ids.并把引用数置1
         self.used_block_ids.add(block_id)
