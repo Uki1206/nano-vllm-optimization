@@ -70,14 +70,25 @@ def main():
         # 当前实验固定生成 16 个 Token，可以计算首 Token 和平均间隔
         assert len(token_times) >= 2
 
+        # 计算TTFT和TPOT
         ttft = token_times[0] - start_time
         tpot = (token_times[-1] - token_times[0]) / (len(token_times) - 1)
+        # 计算每个ITL（相邻两个输出token的时间间隔,单位为秒）
+        itls = [
+            token_times[j] - token_times[j-1]
+            for j in range(1, len(token_times))
+        ]
 
         print(f"\n第 {i + 1} 次：")
         print(f"请求处理耗时：{elapsed:.3f} 秒")
         print(f"生成 Token 数：{len(token_times)}")
         print(f"TTFT：{ttft * 1000:.2f} 毫秒")
         print(f"TPOT：{tpot * 1000:.2f} 毫秒")
+
+        # 将每个间隔转换成毫秒，方便观察
+        itls_ms = [round(itl * 1000, 2) for itl in itls]
+        print(f"每个 ITL：{itls_ms} 毫秒")
+        print(f"最大 ITL：{max(itls_ms):.2f} 毫秒")
 
     average_latency = sum(latencies) / len(latencies)
     print(f"\n三次平均总耗时：{average_latency:.3f} 秒")
