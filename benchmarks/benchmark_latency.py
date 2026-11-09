@@ -39,7 +39,20 @@ def main():
         ignore_eos=True,
     )
 
-    prompt = "hello,how are you?"
+    # 从环境变量读取输入长度；未指定时使用 32
+    input_token_count = int(os.environ.get("NANOVLLM_INPUT_TOKENS", "32"))
+
+    if not 1 <= input_token_count <= 256:
+        raise ValueError("本次实验的输入长度应在 1 到 256 之间")
+
+    # 使用一个普通 Token，构造长度可控的测试输入
+    token_id = llm.tokenizer.encode(
+        "你好",
+        add_special_tokens=False,
+    )[0]
+    prompt = [token_id] * input_token_count
+
+    print(f"本次输入长度：{len(prompt)} 个 Token")
 
     # 先运行一次预热；预热结果不计入正式测量
     print("正在预热...")
@@ -148,7 +161,7 @@ def main():
         "workload": {
             "model_path": model_path,
             "prompt": prompt,
-            "prompt_tokens": len(llm.tokenizer.encode(prompt)),
+            "prompt_tokens": len(prompt),
             "max_output_tokens": sampling_params.max_tokens,
             "temperature": sampling_params.temperature,
             "ignore_eos": sampling_params.ignore_eos,
