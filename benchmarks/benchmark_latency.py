@@ -1,5 +1,11 @@
+import hashlib
+import json
 import os
+import subprocess
+from datetime import datetime, timezone
 from time import perf_counter
+
+import torch
 
 # 使用本地模型
 os.environ["HF_HUB_OFFLINE"] = "1"
@@ -40,6 +46,7 @@ def main():
     llm.generate([prompt], sampling_params, use_tqdm=False)
 
     latencies = []
+    run_results = []
 
     # 正式测量三次
     for i in range(3):
@@ -90,9 +97,79 @@ def main():
         print(f"每个 ITL：{itls_ms} 毫秒")
         print(f"最大 ITL：{max(itls_ms):.2f} 毫秒")
 
+        # 保存原始数值；时间统一使用秒，暂时不做四舍五入
+        run_results.append({
+            "run": i + 1,
+            "output_tokens": len(token_times),
+            "request_latency_s": elapsed,
+            "ttft_s": ttft,
+            "tpot_s": tpot,
+            "itl_s": itls,
+            # 每个 Token 的时间相对于本次请求开始时间
+            "token_offsets_s": [
+                token_time - start_time
+                for token_time in token_times
+            ],
+        })
+
     average_latency = sum(latencies) / len(latencies)
     print(f"\n三次平均总耗时：{average_latency:.3f} 秒")
 
+    # 获取项目目录和当前 Git 状态
+    repo_dir = os.path.dirname(
+        os.path.dirname(os.path.abspath(__file__))
+    )
+    git_commit = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo_dir,
+        text=True,
+    ).strip()
+    git_status = subprocess.check_output(
+        ["git", "status", "--porcelain"],
+        cwd=repo_dir,
+        text=True,
+    ).strip()
+
+    # 记录本次运行的脚本内容摘要
+    with open(__file__, "rb") as source_file:
+        script_sha256 = hashlib.sha256(source_file.read()).hexdigest()
+
+    # 组织实验条件和每轮原始结果
+    report = {
+        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+        "git_commit": git_commit,
+        "git_worktree_dirty": bool(git_status),
+        "benchmark_script_sha256": script_sha256,
+        "environment": {
+            "gpu": torch.cuda.get_device_name(0),
+            "torch": str(torch.__version__),
+            "torch_cuda": torch.version.cuda,
+        },
+        "workload": {
+            "model_path": model_path,
+            "prompt": prompt,
+            "prompt_tokens": len(llm.tokenizer.encode(prompt)),
+            "max_output_tokens": sampling_params.max_tokens,
+            "temperature": sampling_params.temperature,
+            "ignore_eos": sampling_params.ignore_eos,
+            "warmup_runs": 1,
+            "measured_runs": len(run_results),
+        },
+        "average_request_latency_s": average_latency,
+        "runs": run_results,
+    }
+
+    # 每次运行生成一个新文件
+    result_dir = os.path.join(repo_dir, "results")
+    os.makedirs(result_dir, exist_ok=True)
+
+    file_time = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
+    result_path = os.path.join(result_dir, f"latency_{file_time}.json")
+
+    with open(result_path, "x", encoding="utf-8") as result_file:
+        json.dump(report, result_file, ensure_ascii=False, indent=2)
+
+    print(f"实验结果已保存到：{result_path}")
 
 if __name__ == "__main__":
     main()
