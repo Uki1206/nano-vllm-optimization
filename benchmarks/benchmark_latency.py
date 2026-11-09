@@ -41,9 +41,13 @@ def main():
 
     # 从环境变量读取输入长度；未指定时使用 32
     input_token_count = int(os.environ.get("NANOVLLM_INPUT_TOKENS", "32"))
-
     if not 1 <= input_token_count <= 256:
         raise ValueError("本次实验的输入长度应在 1 到 256 之间")
+
+    # 从环境变量读取正式测量次数，默认测量 10 次
+    repeat_count = int(os.environ.get("NANOVLLM_REPEATS", "10"))
+    if not 1 <= repeat_count <= 100:
+        raise ValueError("测量次数应在 1 到 100 之间")
 
     # 使用一个普通 Token，构造长度可控的测试输入
     token_id = llm.tokenizer.encode(
@@ -61,8 +65,8 @@ def main():
     latencies = []
     run_results = []
 
-    # 正式测量三次
-    for i in range(3):
+    # 正式测量repeat_count次
+    for i in range(repeat_count):
         # 本实验每次只运行一个请求
         assert llm.is_finished()
 
@@ -126,7 +130,7 @@ def main():
         })
 
     average_latency = sum(latencies) / len(latencies)
-    print(f"\n三次平均总耗时：{average_latency:.3f} 秒")
+    print(f"\n{repeat_count} 次平均请求处理耗时：{average_latency:.3f} 秒")
 
     # 获取项目目录和当前 Git 状态
     repo_dir = os.path.dirname(
