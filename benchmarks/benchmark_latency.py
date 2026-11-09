@@ -43,26 +43,41 @@ def main():
 
     # 正式测量三次
     for i in range(3):
-        start_time = perf_counter()
+        # 本实验每次只运行一个请求
+        assert llm.is_finished()
 
-        outputs = llm.generate(
-            [prompt],
-            sampling_params,
-            use_tqdm=False,
-        )
+        # 记录开始提交请求的时间，包含输入文字的分词时间
+        start_time = perf_counter()
+        llm.add_request(prompt, sampling_params)
+
+        # 请求刚进入 waiting 队列，取出对应的 Sequence
+        seq = llm.scheduler.waiting[-1]
+        token_times = []
+
+        # 每调用一次 step，就执行一轮调度和模型推理
+        while not llm.is_finished():
+            previous_count = seq.num_completion_tokens
+
+            llm.step()
+
+            # 输出 Token 数增加，说明本轮产生了一个新 Token
+            if seq.num_completion_tokens > previous_count:
+                token_times.append(perf_counter())
 
         elapsed = perf_counter() - start_time
         latencies.append(elapsed)
 
-        output = outputs[0]
-        token_count = len(output["token_ids"])
+        # 当前实验固定生成 16 个 Token，可以计算首 Token 和平均间隔
+        assert len(token_times) >= 2
 
-        print(
-            f"第 {i + 1} 次："
-            f"总耗时 {elapsed:.3f} 秒，"
-            f"生成 {token_count} 个 Token"
-        )
-        print(f"生成文本：{output['text']!r}")
+        ttft = token_times[0] - start_time
+        tpot = (token_times[-1] - token_times[0]) / (len(token_times) - 1)
+
+        print(f"\n第 {i + 1} 次：")
+        print(f"请求处理耗时：{elapsed:.3f} 秒")
+        print(f"生成 Token 数：{len(token_times)}")
+        print(f"TTFT：{ttft * 1000:.2f} 毫秒")
+        print(f"TPOT：{tpot * 1000:.2f} 毫秒")
 
     average_latency = sum(latencies) / len(latencies)
     print(f"\n三次平均总耗时：{average_latency:.3f} 秒")
