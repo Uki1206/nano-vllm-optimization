@@ -8,7 +8,7 @@ import torch.multiprocessing as mp
 from nanovllm.config import Config
 from nanovllm.sampling_params import SamplingParams
 from nanovllm.engine.sequence import Sequence
-from nanovllm.engine.scheduler import Scheduler
+from nanovllm.engine.scheduler_factory import build_scheduler
 from nanovllm.engine.model_runner import ModelRunner
 
 
@@ -38,7 +38,9 @@ class LLMEngine:
         self.model_runner = ModelRunner(config, 0, self.events) # 创建rank0 ModelRunner
         self.tokenizer = AutoTokenizer.from_pretrained(config.model, use_fast=True)
         config.eos = self.tokenizer.eos_token_id
-        self.scheduler = Scheduler(config)
+        self.scheduler = build_scheduler(config)
+        self.scheduler_backend = config.scheduler_backend
+        self.last_step_stats = None
 
         atexit.register(self.exit) #注册退出逻辑：python程序关闭时自动调用self.exit()
 
@@ -67,9 +69,14 @@ class LLMEngine:
         ！核心！ 一次推理迭代
         """
         seqs, is_prefill = self.scheduler.schedule()
+        # mixed 模式下 is_prefill 表示使用变长执行路径；各请求的实际阶段看 seq.is_prefill
+        self.last_step_stats = {
+            "prefill_tokens": sum(seq.num_scheduled_tokens for seq in seqs if seq.is_prefill),
+            "decode_tokens": sum(seq.num_scheduled_tokens for seq in seqs if not seq.is_prefill),
+        }
         num_tokens = sum(seq.num_scheduled_tokens for seq in seqs) if is_prefill else -len(seqs)
-        # prefill：本轮要处理的token数 = scheduled_token数之和
-        # decode: 本轮要处理的token数 = 请求的数量,用负数区分prefill和decode
+        # baseline 保留原接口：正数表示 Prefill token 数，负数表示 Decode 请求数
+        # mixed 的正数表示本轮总 token 数；区分阶段请使用 last_step_stats
 
         # 所有进程执行一次推理
         token_ids = self.model_runner.call("run", seqs, is_prefill) 
@@ -119,10 +126,17 @@ class LLMEngine:
             else:
                 decode_throughput = -num_tokens / (perf_counter() - t)
 
-            pbar.set_postfix({
-                "Prefill": f"{int(prefill_throughput)}tok/s",
-                "Decode": f"{int(decode_throughput)}tok/s",
-            })
+            if self.scheduler_backend == "mixed":
+                # 混合批次只有一次共同耗时，不能分别计算 Prefill 和 Decode 吞吐
+                pbar.set_postfix({
+                    "Mixed": f"{int(num_tokens / (perf_counter() - t))}tok/s",
+                    "P/D tokens": f'{self.last_step_stats["prefill_tokens"]}/{self.last_step_stats["decode_tokens"]}',
+                })
+            else:
+                pbar.set_postfix({
+                    "Prefill": f"{int(prefill_throughput)}tok/s",
+                    "Decode": f"{int(decode_throughput)}tok/s",
+                })
 
             # 收集已完成请求(注意step中只返回已完成的请求)
             for seq_id, token_ids in output:
