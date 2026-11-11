@@ -14,14 +14,14 @@ from nanovllm.engine.scheduler import Scheduler
 from nanovllm.experimental.schedulers.unified_scheduler import UnifiedScheduler
 
 
-def run_case(llm, scheduler_class, body_token, pair):
+def run_case(llm, scheduler_class, body_token, pair, b_prompt_tokens):
     # 每次使用新的 BlockManager，避免某一组因复用另一组的前缀缓存获益
     llm.scheduler = scheduler_class(llm.model_runner.config)
     torch.manual_seed(20261110 + pair)
 
     prompt_a = [body_token] * 32
     prefix = llm.tokenizer.encode(f"case-{pair:03d}", add_special_tokens=False)
-    prompt_b = (prefix + [body_token] * 768)[:768]
+    prompt_b = (prefix + [body_token] * b_prompt_tokens)[:b_prompt_tokens]
     params_a = SamplingParams(temperature=0.6, max_tokens=16, ignore_eos=True)
     params_b = SamplingParams(temperature=0.6, max_tokens=1, ignore_eos=True)
 
@@ -70,9 +70,20 @@ def main():
     parser = argparse.ArgumentParser(description="对比 baseline 和 mixed 调度")
     parser.add_argument("--model", required=True, help="本地模型目录")
     parser.add_argument("--pairs", type=int, default=3, help="测量组数，默认 3")
+    parser.add_argument(
+        "--b-prompt-tokens",
+        type=int,
+        default=768,
+        help="请求 B 的输入 Token 数，默认 768",
+    )
+
     args = parser.parse_args()
+
     if args.pairs < 1:
         parser.error("--pairs 必须大于 0")
+
+    if not 1 <= args.b_prompt_tokens <= 1023:
+        parser.error("--b-prompt-tokens 必须在 1 到 1023 之间")
 
     llm = LLM(
         args.model,
@@ -89,13 +100,13 @@ def main():
 
     print("正在预热两种策略...")
     for scheduler_class in strategies.values():
-        run_case(llm, scheduler_class, token, 0)
+        run_case(llm, scheduler_class, token, 0, args.b_prompt_tokens)
 
     results = {"baseline": [], "mixed": []}
     for pair in range(1, args.pairs + 1):
         order = ["baseline", "mixed"] if pair % 2 else ["mixed", "baseline"]
         for name in order:
-            result = run_case(llm, strategies[name], token, pair)
+            result = run_case(llm, strategies[name], token, pair, args.b_prompt_tokens)
             results[name].append(result)
             print(f'第 {pair} 组 {name}：A 的第 5～6 个 Token 间隔 '
                   f'{result["gap_a_5_to_6_ms"]:.2f} ms；'
@@ -124,7 +135,7 @@ def main():
         "workload": {
             "a_prompt_tokens": 32,
             "a_output_tokens": 16,
-            "b_prompt_tokens": 768,
+            "b_prompt_tokens": args.b_prompt_tokens,
             "b_output_tokens": 1,
             "inject_after_a_tokens": 5,
             "max_num_batched_tokens": 512,
