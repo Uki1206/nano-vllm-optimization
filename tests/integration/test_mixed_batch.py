@@ -6,6 +6,7 @@ import torch
 
 from nanovllm import LLM, SamplingParams
 from nanovllm.engine.scheduler import Scheduler
+from nanovllm.experimental.schedulers.budgeted_scheduler import BudgetedScheduler
 from nanovllm.experimental.schedulers.unified_scheduler import UnifiedScheduler
 
 
@@ -94,6 +95,30 @@ class TestMixedBatchGPU(unittest.TestCase):
             self.assertTrue(mixed_steps, "未观察到同一轮 Prefill 和 Decode")
             print("实际混合批次（是否 Prefill，Token 数）：", mixed_steps)
 
+            # 使用真实 Token 时间反馈，验证预算收缩时仍能正确生成
+            config.initial_prefill_budget = 256
+            config.target_itl_ms = 1.0  # 测试中强制触发收缩，不作为性能目标
+            budget_steps = attach_scheduler(BudgetedScheduler(config))
+            budget_a = add(prompt_a, params_a)
+            while budget_a.num_completion_tokens < 3:
+                llm.step()
+            budget_b = add(prompt_b, params_b)
+            budget_trace = []
+            while not llm.is_finished():
+                llm.step()
+                budget_trace.append(dict(llm.last_step_stats))
+            self.assertTrue(budget_steps)
+            self.assertTrue(any(
+                step["next_prefill_budget"] < step["prefill_budget"]
+                for step in budget_trace
+            ))
+            self.assertTrue(all(
+                step["prefill_tokens"] <= step["prefill_budget"]
+                for step in budget_trace
+            ))
+            print("预算反馈：", [(s["prefill_budget"], s["next_prefill_budget"])
+                              for s in budget_trace if s["prefill_tokens"]])
+
             # 先计算 C 的独立参考，再在混合调度中使用已缓存的 256 Token 前缀
             other = llm.tokenizer.encode("世界", add_special_tokens=False)[0]
             prompt_c = [token] * 256 + [other] * 44
@@ -120,6 +145,8 @@ class TestMixedBatchGPU(unittest.TestCase):
             for name, isolated, mixed in [
                 ("A", isolated_a, mixed_a),
                 ("B", isolated_b, mixed_b),
+                ("A（动态预算）", isolated_a, budget_a),
+                ("B（动态预算）", isolated_b, budget_b),
                 ("C（前缀缓存）", isolated_c, mixed_c),
             ]:
                 self.assertEqual(isolated.completion_token_ids, mixed.completion_token_ids)

@@ -68,7 +68,11 @@ class LLMEngine:
         """
         ！核心！ 一次推理迭代
         """
+        # 在调度前记录等待状态：本轮完成的 Prefill 会从 waiting 移走
+        observe_step = getattr(self.scheduler, "observe_step", None)
+        waiting_prefill = bool(self.scheduler.waiting) if observe_step else False
         seqs, is_prefill = self.scheduler.schedule()
+        previous_counts = [seq.num_completion_tokens for seq in seqs] if observe_step else None
         # mixed 模式下 is_prefill 表示使用变长执行路径；各请求的实际阶段看 seq.is_prefill
         self.last_step_stats = {
             "prefill_tokens": sum(seq.num_scheduled_tokens for seq in seqs if seq.is_prefill),
@@ -83,6 +87,13 @@ class LLMEngine:
 
         # 更新请求状态，判断是否结束
         self.scheduler.postprocess(seqs, token_ids, is_prefill)
+
+        if observe_step:
+            # Token 已经可供引擎处理，记录真实相邻输出间隔；采样结果已同步到 CPU
+            observe_step(seqs, previous_counts, perf_counter(), waiting_prefill)
+            self.last_step_stats["prefill_budget"] = self.scheduler.last_prefill_budget
+            self.last_step_stats["next_prefill_budget"] = self.scheduler.controller.current_budget
+            self.last_step_stats["ema_itl_ms"] = self.scheduler.controller.ema_itl_ms
 
         # 只返回已经完成的请求
         outputs = [(seq.seq_id, seq.completion_token_ids) for seq in seqs if seq.is_finished]
@@ -126,7 +137,7 @@ class LLMEngine:
             else:
                 decode_throughput = -num_tokens / (perf_counter() - t)
 
-            if self.scheduler_backend == "mixed":
+            if self.scheduler_backend in ("mixed", "budgeted"):
                 # 混合批次只有一次共同耗时，不能分别计算 Prefill 和 Decode 吞吐
                 pbar.set_postfix({
                     "Mixed": f"{int(num_tokens / (perf_counter() - t))}tok/s",

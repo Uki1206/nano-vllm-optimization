@@ -1,10 +1,12 @@
 from nanovllm.engine.scheduler import Scheduler
 from nanovllm.experimental.schedulers.unified_scheduler import UnifiedScheduler
+from nanovllm.experimental.schedulers.budgeted_scheduler import BudgetedScheduler
 
 
 SCHEDULER_REGISTRY = {
     "baseline": Scheduler,
     "mixed": UnifiedScheduler,
+    "budgeted": BudgetedScheduler,
 }
 
 
