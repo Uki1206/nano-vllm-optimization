@@ -3,6 +3,7 @@ import xxhash
 import numpy as np
 
 from nanovllm.engine.sequence import Sequence
+from nanovllm.experimental.cache.cache_metrics import CacheMetrics
 
 class Block:
 
@@ -26,6 +27,7 @@ class BlockManager:
 
     def __init__(self, num_blocks: int, block_size: int):
         self.block_size = block_size
+        self.metrics = CacheMetrics()
         self.blocks: list[Block] = [Block(i) for i in range(num_blocks)]
         self.hash_to_block_id: dict[int, int] = dict()
         self.free_block_ids: deque[int] = deque(range(num_blocks))
@@ -51,6 +53,7 @@ class BlockManager:
         # 注意即使是从free池中取出的block,也不一定完全是"空"的，它的hash和token_ids可能残留还未被删除
         if(block.hash != -1 and self.hash_to_block_id.get(block.hash) == block_id):
             del self.hash_to_block_id[block.hash]  # 先删除对应的hash-block_id映射
+            self.metrics.eviction_count += 1
         block.reset()  # 再清除block的hash,token_ids.并把引用数置1
         self.used_block_ids.add(block_id)
         return block_id
@@ -77,6 +80,7 @@ class BlockManager:
         for i in range(seq.num_blocks - 1):
             token_ids = seq.block(i)
             h = self.compute_hash(token_ids, h)
+            self.metrics.lookup_count += 1
             block_id = self.hash_to_block_id.get(h,-1)
             # 如果当前h没有对应的block_id(-1)，或者h对应block的token_ids不是当前块的token_ids,说明当前块不是前缀
             # 因为理论上不同token_ids也可能算出相同的hash,因此需要hash和token_ids双重确认
@@ -86,12 +90,14 @@ class BlockManager:
             # 经过上面的双重判断没退出，则可确定当前块是前缀,但是前缀命中也有两种情况：
             # 1.前缀命中，且当前块处于used状态(还被其他请求使用)，因此不需要请求一个新block即可复用(num_new_block -= 1)
             # 2.前缀命中，但当前块处于free状态(曾经缓存过，但已经被释放)，这个块需要被重新分配回来(num_new_block不变)
+            self.metrics.hit_count += 1
             num_cached_blocks += 1
             if block_id in self.used_block_ids:
                 num_new_blocks -= 1
 
         # --step3:判断是否有足够空间分配--
         if len(self.free_block_ids) < num_new_blocks:
+            self.metrics.allocation_failure_count += 1
             return -1
         return num_cached_blocks
 
@@ -114,6 +120,8 @@ class BlockManager:
                 self.free_block_ids.remove(block_id)
                 self.used_block_ids.add(block_id)
             seq.block_table.append(block_id)
+            self.metrics.reused_blocks += 1
+            self.metrics.reused_tokens += self.block_size
 
         # 给除了前缀以外的块分配空间并加入block_table, 注意这里已经给一个seq提前预留了所有prefill的block
         for i in range(num_cached_blocks, seq.num_blocks):  

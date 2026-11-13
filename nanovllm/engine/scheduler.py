@@ -93,6 +93,7 @@ class Scheduler:
         Decode阶段不够分配时的抢占规则,传入的是被抢占的seq
         被抢占的seq: 重新进入waiting队列，等待重新prifill，释放其所有物理block
         """
+        self.block_manager.metrics.preemption_count += 1
         seq.status = SequenceStatus.WAITING
         seq.is_prefill = True
         self.block_manager.deallocate(seq)
