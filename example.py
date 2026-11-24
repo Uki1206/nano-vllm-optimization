@@ -27,13 +27,19 @@ def main():
 
     # 设置生成参数
     sampling_params = SamplingParams(
-        temperature=0.6,
-        max_tokens=16
+        temperature=0.7,
+        max_tokens=96,
+        ignore_eos=False,
     )
 
-
     # 提交一个请求，并等待生成完成
-    prompt = "Hello, how are you?"
+    user_text = "你好，你是谁？请用一句话回答。"
+    prompt = llm.tokenizer.apply_chat_template(
+        [{"role": "user", "content": user_text}],
+        tokenize=False,
+        add_generation_prompt=True,
+        enable_thinking=False,  # 普通对话先关闭思考模式
+    )
     outputs = llm.generate(
         [prompt],
         sampling_params,

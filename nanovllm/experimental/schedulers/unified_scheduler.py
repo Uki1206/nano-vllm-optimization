@@ -70,10 +70,10 @@ class UnifiedScheduler(Scheduler):
     def schedule(self):
         scheduled_seqs = []
         remaining = self.max_num_batched_tokens
-        can_mix = self.max_num_seqs > 1 and remaining > 1
+        can_mix = self.max_num_seqs > 1 and remaining > 1       # 判断当前配置是否允许混合调度
         solo_prefill = (
-            not can_mix and self.waiting and self.running and self.prefer_solo_prefill
-        )
+            not can_mix and self.waiting and self.running and self.prefer_solo_prefill      # 判断是否需要单独调度 Prefill，4个条件：1.当前配置不允许混合 2.有等待中的 Prefill 3.有正在执行的 Decode 4.当前轮优先 Prefill
+        )# 注：solo_prefill主要用于 当不具备混合调度能力时，决定这一轮是否应该优先单独调度 Prefill，避免 Prefill 一直得不到执行机会。
 
         if solo_prefill:
             # 预算不足以混合时，在 Prefill 和 Decode 之间交替
@@ -99,3 +99,15 @@ class UnifiedScheduler(Scheduler):
 
         # True 表示选择变长 Attention 执行路径；每个请求的阶段仍由自身状态表示
         return scheduled_seqs, True
+
+    """
+    else部分里的第一个if不生效时(也就是不能混合调度时)
+    下方的两句实际上只有第一句时有效，也就是只执行decode，它就会把max_num_seqs或者remaining消耗完，
+    以至于下一句prefill实际上并不会真正执行。
+    这样一来也就是：当不能混合时(can_mix=False)，
+    优先只会执行decode，这样会导致prefill饥饿，所以才引入了prefer_solo_prefill和solo_prefill两个变量。
+    当这一轮只执行了decode时(不能混合是大前提)，prefer_solo_prefill变为True,
+    下一轮solo_prefill也变为True，改为走一条单独的prefill优先的分支。
+    同样，当这一轮只执行Prefill时，prefer_solo_prefill变为False,下一轮solo_prefill也变为False,
+    又走原来的分支
+    """
