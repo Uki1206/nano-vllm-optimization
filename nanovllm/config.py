@@ -13,6 +13,7 @@ class Config:
     tensor_parallel_size: int = 1
     enforce_eager: bool = False
     scheduler_backend: str = "baseline"
+    cache_eviction_policy: str = "baseline"
     prefill_budget_mode: str = "adaptive"
     min_prefill_budget: int = 64
     max_prefill_budget: int | None = None
@@ -30,6 +31,8 @@ class Config:
         assert 1 <= self.tensor_parallel_size <= 8
         if self.scheduler_backend not in ("baseline", "mixed", "budgeted"):
             raise ValueError(f"Unknown scheduler backend: {self.scheduler_backend}")
+        if self.cache_eviction_policy not in ("baseline", "none", "fifo", "lru"):
+            raise ValueError(f"Unknown cache_eviction_policy: {self.cache_eviction_policy}")
         if self.scheduler_backend in ("mixed", "budgeted"):
             if self.tensor_parallel_size != 1 or not self.enforce_eager:
                 raise ValueError("mixed and budgeted schedulers require tensor_parallel_size=1 and enforce_eager=True")

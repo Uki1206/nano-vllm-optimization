@@ -2,7 +2,7 @@ from collections import deque
 
 from nanovllm.config import Config
 from nanovllm.engine.sequence import Sequence, SequenceStatus
-from nanovllm.engine.block_manager import BlockManager
+from nanovllm.experimental.cache.block_manager_lru import build_block_manager
 
 class Scheduler:
 
@@ -11,7 +11,7 @@ class Scheduler:
         self.max_num_batched_tokens = config.max_num_batched_tokens  # 每个step的token最大值
         self.eos = config.eos
         self.block_size = config.kvcache_block_size
-        self.block_manager = BlockManager(config.num_kvcache_blocks, config.kvcache_block_size)
+        self.block_manager = build_block_manager(config)
         self.waiting: deque[Sequence] = deque()
         self.running: deque[Sequence] = deque()
 
