@@ -8,27 +8,33 @@ __pycache__/
 venv/
 env/
 
-# VSCode
+# IDE & Editors
 .vscode/
+.idea/
 
-# Build
+# Build & Packaging
 build/
 dist/
 *.egg-info/
 
-# CUDA / compiled files
+# CUDA / Compiled binaries
 *.o
 *.so
+*.exe
 
-# Cache
+# Profiler traces & raw benchmark outputs
+results/
+*.nsys-rep
+*.ncu-rep
+*.qdrep
+*.sqlite
+
+# Cache & Logs
 .cache/
-
-# Logs
 *.log
 
-# Model weights
+# Model weights & checkpoints
 *.bin
 *.safetensors
-
-# IDE
-.idea/
+*.pt
+*.pth

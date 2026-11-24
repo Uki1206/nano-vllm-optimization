@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nano-vllm-optimization"
+version = "0.1.0"
+description = "Nano-vLLM inference engine optimization: Prefix Cache LRU, CUDA Graph, Mixed-Batch Scheduling, INT8 KV Cache, and Speculative Decoding"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "torch",
+    "transformers",
+    "triton",
+    "xxhash",
+    "tqdm",
+    "pyyaml",
+]
+
+[tool.setuptools.packages.find]
+include = ["nanovllm*"]
